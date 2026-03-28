@@ -5,7 +5,7 @@ const https = require('https');
 // =============================================
 // CONFIG
 // =============================================
-const PROXY_URL = 'http://3JzWoYWC3XXy6Elh:hY6aiHucYtUEs0qr_country-br@geo.iproyal.com:12321';
+const PROXY_URL = 'http://3JzWoYWC3XXy6Elh:hY6aiHucYtUEs0qr_country-br@geo.iproyal.com:12323';
 const SB_URL = 'https://jzcoxdgbtjitjwrppbbf.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6Y294ZGdidGppdGp3cnBwYmJmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDg2ODE4NiwiZXhwIjoyMDgwNDQ0MTg2fQ.MSxJyxW9YMjm3wUsNEmtmLuzf04xf_Lx2JzYjfJthro';
 
