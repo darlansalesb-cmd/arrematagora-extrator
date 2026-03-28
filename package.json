@@ -1,6 +1,6 @@
 {
   "name": "arrematagora-extrator",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Extrator de imóveis Caixa → Supabase",
   "main": "cron.js",
   "scripts": {
@@ -8,7 +8,6 @@
     "extrair": "node extrair.js"
   },
   "dependencies": {
-    "puppeteer": "^23.0.0",
-    "proxy-chain": "^2.4.0"
+    "puppeteer": "^23.0.0"
   }
 }
