@@ -1,11 +1,9 @@
 const puppeteer = require('puppeteer');
-const proxyChain = require('proxy-chain');
 const https = require('https');
 
 // =============================================
 // CONFIG
 // =============================================
-const PROXY_URL = 'http://3JzWoYWC3XXy6Elh:hY6aiHucYtUEs0qr_country-br@geo.iproyal.com:12323';
 const SB_URL = 'https://jzcoxdgbtjitjwrppbbf.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6Y294ZGdidGppdGp3cnBwYmJmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NDg2ODE4NiwiZXhwIjoyMDgwNDQ0MTg2fQ.MSxJyxW9YMjm3wUsNEmtmLuzf04xf_Lx2JzYjfJthro';
 
@@ -16,7 +14,7 @@ const ESTADOS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT
 // =============================================
 function log(msg) { console.log(`[${new Date().toISOString().substring(11,19)}] ${msg}`); }
 
-function supabasePost(table, body, params = '') {
+function supabasePost(table, body, params) {
   return new Promise((resolve, reject) => {
     const url = new URL(SB_URL);
     const opts = {
@@ -93,24 +91,32 @@ async function main() {
   log('  ARREMATAGORA - Extrator Caixa');
   log('========================================');
 
-  // 1. Criar proxy anônimo (resolve auth do IPRoyal)
-  log('Configurando proxy residencial...');
-  const anonProxy = await proxyChain.anonymizeProxy(PROXY_URL);
-  log('Proxy OK: ' + anonProxy);
-
-  // 2. Abrir Chrome com proxy
+  // Chrome com stealth (sem proxy)
+  log('Abrindo Chrome headless...');
   const browser = await puppeteer.launch({
     headless: 'new',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      `--proxy-server=${anonProxy}`
+      '--disable-blink-features=AutomationControlled',
+      '--disable-web-security',
+      '--disable-features=IsolateOrigins,site-per-process'
     ]
   });
 
   const page = await browser.newPage();
+  
+  // Stealth: esconder que é automação
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+    window.chrome = { runtime: {} };
+  });
+  
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+  await page.setExtraHTTPHeaders({ 'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7' });
 
   const stats = {};
   const erros = [];
@@ -118,15 +124,34 @@ async function main() {
   let totalUpserted = 0;
 
   try {
-    // 3. Visitar página pra passar pelo WAF
+    // Visitar página pra passar pelo WAF
     log('Acessando site da Caixa...');
     await page.goto('https://venda-imoveis.caixa.gov.br/sistema/download-lista.asp', {
       waitUntil: 'networkidle2', timeout: 30000
     });
-    await new Promise(r => setTimeout(r, 3000));
-    log('Site acessado: ' + await page.title());
+    await new Promise(r => setTimeout(r, 5000));
+    
+    const title = await page.title();
+    const pageUrl = page.url();
+    log('Título: ' + title);
+    log('URL: ' + pageUrl);
+    
+    // Checa se passou pelo WAF
+    if (title.includes('Azion') || title.includes('error')) {
+      log('❌ WAF bloqueou. Tentando aguardar challenge...');
+      await new Promise(r => setTimeout(r, 10000));
+      await page.reload({ waitUntil: 'networkidle2' });
+      await new Promise(r => setTimeout(r, 5000));
+      const title2 = await page.title();
+      log('Título após reload: ' + title2);
+      if (title2.includes('Azion') || title2.includes('error')) {
+        throw new Error('WAF Azion bloqueou o acesso');
+      }
+    }
+    
+    log('Site acessado com sucesso!');
 
-    // 4. Baixar CSVs
+    // Baixar CSVs
     for (const uf of ESTADOS) {
       log(`[${uf}] Baixando...`);
       try {
@@ -152,7 +177,7 @@ async function main() {
           continue;
         }
 
-        // 5. Parsear
+        // Parsear
         const rows = parseCSV(csv.data);
         if (rows.length === 0) {
           log(`[${uf}] ❌ Parse vazio`);
@@ -224,7 +249,7 @@ async function main() {
         totalRecords += registros.length;
         log(`[${uf}] ✅ ${registros.length} imóveis`);
 
-        // 6. Upsert batches de 500
+        // Upsert batches de 500
         for (let i = 0; i < registros.length; i += 500) {
           const batch = registros.slice(i, i + 500);
           try {
@@ -252,11 +277,9 @@ async function main() {
     erros.push({ msg: e.message });
   }
 
-  // 7. Fechar browser e proxy
   await browser.close();
-  await proxyChain.closeAnonymizedProxy(anonProxy, true);
 
-  // 8. Salvar log
+  // Salvar log
   try {
     await supabasePost('extracoes_log', {
       total_baixados: totalRecords,
@@ -269,7 +292,6 @@ async function main() {
     });
   } catch(e) {}
 
-  // Resumo
   log('========================================');
   log(`  TOTAL: ${totalRecords} imóveis`);
   log(`  UPSERTED: ${totalUpserted}`);
@@ -279,5 +301,4 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
-
 module.exports = main;
